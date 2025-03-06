@@ -82,3 +82,57 @@ comparison <-
 		
 		a
 	}
+
+
+
+
+simple <- 
+	function(
+		YYY , 
+		COLS = NULL , 
+		REDUCE = FALSE ,
+		HA = FALSE ,
+		### you can have "%" or "$" or FALSE
+		#signs = NULL ,
+		### rounds to nearst percent or dollar
+		#rounds = TRUE ,
+		# FALSE = always number; "always" = always word ; smart= number above ten - word less than ten
+		#english = "smart" ,
+		### number of digits when rounding
+		#DIGITS = 0 , 
+		### if its a percent and less 1 do you want it be y*100 i.e. is it 0.81% or is it suppose to be 81%
+		#inflate = NULL ,
+		#caps = FALSE , 
+		#Hyphenate = no.na( YYYY < 100 ) 
+		... 
+	){
+
+		
+		if( class( YYY ) %in% "data.frame" ){
+			
+			
+			if( is.null( COLS ) ){
+				if( any( colnames( YYY ) %in%  "mean" ) ) YYY[ , "simple" ] <- sapply( YYY[, "mean" ] , simpleX , ...)
+				
+				for( ia in 1:10){
+				
+					if( any( colnames( YYY ) %in%  paste0("factor_",ia)) )	YYY[ , paste0("simple",ia) ] <- sapply( YYY[, paste0("factor_",ia) ] , simpleX ,... )
+				}
+				
+			}
+			
+			if( any( colnames( YYY ) %in%  COLS ) ) YYY[ , "simple" ] <- sapply( YYY[, COLS ] , function( z) simpleX( z , ...)) else warning("no such variable")
+			
+			if( REDUCE ) YYY <- YYY[ , grepl("simple", colnames( YYY )) ]
+			
+			
+		} else {
+
+			YYY <- simpleX( YYY , ... )
+
+		}
+
+		if( HA ) YYY <- gsub( "%", " percent", YYY)
+		return( YYY )
+
+	}
