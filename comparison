@@ -86,6 +86,270 @@ comparison <-
 
 
 
+ehbs_english <- 
+	function( x , capitalize = FALSE , hyphenate = no.na( x < 100 ) ) { 
+		if( length( hyphenate ) == 1 ) hyphenate <- rep( hyphenate , length( x ) )
+		x <- as.character( english( x ) )
+		x <- ifelse( hyphenate , gsub( " " , "-" , x ) , x )
+		if( capitalize ) return( Hmisc::capitalize( x ) ) else return( x ) 
+	}
+
+svy_dollar <- function( XXX , digits = 0 ){
+	#XXX <- a[1,2]
+	if( class( XXX) %in% "svystat" ) XXX <- coef( XXX ) else XXX <-XXX
+	XXX <- as.numeric( as.character( XXX ) )
+	XXX <- round( XXX , digits ) 
+	paste0( "$" , prettyNum(  XXX , big.mark = "," ) )
+} 
+
+svy_pct <- function( x , digits = 0 , english = FALSE , capitalize = FALSE ) {
+
+		if( any( is.na( x ) ) ) { warning( "MISSING VALUE" ) ; return( "MISSING VALUE" ) }
+
+		try( x <- coef( x ) , silent = TRUE )
+		
+		if( any( x < 0 ) ) stop( "negative percent passed to svy_pct" )
+		
+		if( !english & capitalize ) stop( "english = FALSE and capitalize = TRUE not allowed" )
+		
+		as.character( 
+			ifelse( x == 0 , ifelse( rep( english , length( x ) ) , ifelse( capitalize , "Zero" , "zero" ) , "0%" ) ,
+			ifelse( x < 0.005 , ifelse( rep( english , length( x ) ) , ifelse( capitalize , "Less than one percent" , "less than one percent" ) , "<1%" ) , 
+			ifelse( rep( english , length( x ) ) ,
+				paste0( ehbs_english( round( x * 100 ) , capitalize ) , " percent" ) ,
+				paste0( round( x * 100 , digits = digits ) , "%" ) ) ) )
+		)
+				
+	}
+
+nearby <- function( x , digits = -2 , is_dollar = FALSE ){
+
+	# treat numbers less than 1 as a percent
+	if( x < 1 ){
+	
+		nearest_tens <- round( x , 1 )
+		
+		if( nearest_tens == round( x , 2 ) ) prefix <- "" else if( nearest_tens < x ) prefix <- "more than " else prefix <- "almost "
+		
+		return( paste0( prefix , 100 * nearest_tens , "%" ) )
+		
+	} else {
+	
+		nearest_tens <- round( x , digits )
+		
+		if( nearest_tens == x ) prefix <- "" else if( nearest_tens < x ) prefix <- "more than " else prefix <- "almost "
+		
+		return( paste0( prefix , if( is_dollar ) "$" , prettyNum( nearest_tens , big.mark = "," ) ) )
+		
+	}
+	
+}
+
+
+		
+
+
+
+nearby_fractions <-
+	function( x , allowed_denominators = c( 1:5 , 10 ) ){
+
+		allowed_decimals <- unique( sort( unlist( lapply( allowed_denominators , function( w ) seq( 0 , w ) / w ) ) ) )
+
+		nearest_allowed <- unlist( lapply( x , function( w ) which.min( abs( w - allowed_decimals ) ) ) )
+
+		y <- as.character( fractions( allowed_decimals[ nearest_allowed ] ) )
+
+		y <- ifelse( y %in% c( "0" , "1" ) , paste0( y , "/1" ) , y )
+
+		both_sides <- strsplit( y , "/" )
+
+		left_nums <- as.numeric( unlist( lapply( both_sides , '[[' , 1 ) ) )
+
+		right_nums <- as.numeric( unlist( lapply( both_sides , '[[' , 2 ) ) )
+
+		left_side <- as.character( english( left_nums ) )
+
+		right_side <- as.character( english::ordinal( right_nums ) )
+
+		right_side[ left_nums != 1 ] <- paste0( right_side[ left_nums != 1 ] , "s" )
+
+		right_side[ left_nums %in% c( 0 , 1 ) & right_nums %in% 1 ] <- ""
+		
+		left_side[ left_nums == 1 & right_nums == 1 ] <- "all"
+		
+		both_sides <- str_trim( paste( left_side , right_side ) )
+		
+		for( this_num in seq( max( allowed_denominators ) ) ){
+			both_sides <- gsub( paste0( "(" , english( this_num ) , ") " ) , "\\1-" , both_sides )
+		}
+		
+		descriptions <- ifelse( ( round( x , 2 ) %in% round( allowed_decimals , 2 ) ) , both_sides , paste0( "about " , both_sides ) )
+		
+		descriptions <- gsub( "zero" , "none" , descriptions )
+		
+		descriptions <- gsub( "about none" , "nearly none" , descriptions )
+		
+		descriptions <- gsub( "about all" , "nearly all" , descriptions )
+		
+		descriptions <- gsub( "one second" , "one half" , descriptions )
+		
+		descriptions <- gsub( "fourths" , "quarters" , descriptions )
+
+		descriptions <- gsub( "about one half" , "about half" , descriptions )
+		
+		descriptions
+	}
+	
+	
+# signs = NULL ; rounds = TRUE ;english = FALSE ;DIGITS = 0 ;inflate = NULL ; caps= FALSE ; no.na( as.numeric( as.character(  YYYY) )  < 100 ) ; hyphenate = NULL
+#YYYY <- "9"
+
+	
+simpleX <- function( 
+	YYYY , 
+	# you can have "%" or "$" or FALSE
+	signs = NULL ,
+	# rounds to nearst percent or dollar
+	rounds = TRUE ,
+	# FALSE = always number; "always" = always word ; smart= number above ten - word less than ten
+	english = FALSE ,
+	# number of digits when rounding
+	DIGITS = 0 , 
+	# if its a percent and less 1 do you want it be y*100 i.e. is it 0.81% or is it suppose to be 81%
+	inflate = NULL ,
+	caps = FALSE ,
+	#can be TRUE or FALSE
+	hyphenate = NULL
+){
+
+
+
+###############
+### NUMBER EDITING
+###############
+
+if(any(YYYY %in% "NSD") ) stop("Not Sufficient Data") 
+
+if( any(YYYY %in% "<1" ) ){
+	YYYY <- "less than one percent"
+	if( caps ) YYYY <- Hmisc::capitalize( YYYY ) 
+}else{ 
+
+	# IF IT IS A FACTOR - MAKE IT A NUMBER
+	if( is.factor( YYYY ) ) YYYY <- as.numeric( as.character ( YYYY ) ) 
+
+	# IF IT IS A CHARACTER CAPTURE AS MUCH INFORMATION AS POSSIBLE
+	if( is.character( YYYY ) ){
+
+		if( any( grepl( "%",   YYYY )) ) signs <- "%"
+		if( any( grepl( "[$]", YYYY )) ) signs <- "$"
+
+		YYYY <- gsub("[*].*$","", YYYY )
+		YYYY <- gsub("[,]","", YYYY )
+		YYYY <- gsub("[%]","", YYYY )
+		YYYY <- gsub("[$]","", YYYY )
+		YYYY <- str_trim( YYYY ) 
+		YYYY <- as.numeric( as.character ( YYYY ) ) 
+	}
+
+	YNUM <- YYYY
+
+	# if you don't tell the function AND you don't already have a sign it will guess for you
+	if( is.null( signs ) ){
+		if( any( no.na( YYYY < 101 )) ) signs <- "%"
+		if( any( no.na(YYYY > 100 ) )) signs <- "$"
+	}
+
+	if( is.null( hyphenate ) ) hyphenate <- ( YYYY < 100 ) 
+
+
+	############################################################
+	############################################################
+	### DEALING WITH NUMBERS as NUMBERS
+	############################################################
+	############################################################
+
+	# do you want to multiple by a hundred
+	if( is.null( inflate ) ) inflate <- any( ifelse( YYYY < 1 , TRUE , FALSE ))
+
+	###############
+	# DOLLAR SIGNS
+	###############
+	if( signs %in% "$" ){	
+		YYYY <- round( YYYY ,  DIGITS )
+		YYYY <- paste0( "$" , prettyNum( YYYY , big.mark = "," ) )
+	}
+
+	###############
+	# PERCENTS
+	###############
+	if( signs %in% "%" ){
+
+		if( inflate ) YYYY <- YYYY * 100 
+			
+		if( rounds ) YYYY <- round( YYYY , DIGITS )
+
+		YYYY <- paste( prettyNum( YYYY , big.mark = "," ) , "%", sep="")
+		 
+	}
+
+
+	###############
+	# WORD
+	###############
+	if( signs %in% FALSE ){
+		YYYY <- round( YYYY , DIGITS )
+		YYYY <-  prettyNum( YYYY , big.mark = "," ) 
+	}
+
+
+	############################################################
+	############################################################
+	### DEALING WITH NUMBERS as WORDS
+	############################################################
+	############################################################
+
+	# ehbs_english <- 
+		# function( x , caps = FALSE , hyphenate = no.na( x < 100 ) ) { 
+			# if( length( hyphenate ) == 1 ) hyphenate <- rep( hyphenate , length( x ) )
+			# x <- as.character( english( YNUM ) )
+			# x <- ifelse( hyphenate , gsub( " " , "-" , x ) , x )
+			# if( caps ) return( caps( x ) ) else return( x ) 
+		# }
+
+
+	if( inflate ) YNUM <- YNUM * 100 
+	YNUM <- round( YNUM )
+
+	hyphenateX <- hyphenate
+	y_english <- ehbs_english ( YNUM , caps , hyphenateX )
+
+	if( signs %in% "$") y_english <- paste( y_english ,"dollars")
+	if( signs %in% "%") y_english <- paste( y_english , "percent")
+
+}
+
+# if( YNUM < .01 ){
+# YYYY <- "less than one percent"
+	# if( caps ) YYYY <- caps( YYYY ) 
+# }
+ 
+# override when english set true
+if( !is.null( english ) ) if( english %in% TRUE ) english <- "smart"
+
+if( any(YYYY  %in% "less than one percent") ){
+	return( YYYY ) 
+	}else{ 
+		if( english %in% "always" ) return( y_english ) 
+		if( any(english %in% "smart") & any(YNUM < 10 ) ) return( y_english )
+		if( any(english %in% "smart") & any(YNUM > 9 ) ) return( YYYY )  
+		if( english %in% FALSE ) return( YYYY )
+	}
+
+}
+
+# COLS = NULL  ; REDUCE = FALSE
+
 simple <- 
 	function(
 		YYY , 
